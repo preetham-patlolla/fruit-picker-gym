@@ -1,0 +1,1 @@
+from fruit_picker_gym.envs.custom_fruit_picker_gym_env import FruitPickerEnv
