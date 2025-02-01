@@ -33,11 +33,6 @@ objectUid = p.loadURDF(os.path.join(pybullet_data.getDataPath(), "random_urdfs/0
 objectUid = p.loadURDF(os.path.join(pybullet_data.getDataPath(), "random_urdfs/000/000.urdf"), basePosition=[0.37,-0.37,0.01])
 objectUid = p.loadURDF(os.path.join(pybullet_data.getDataPath(), "random_urdfs/000/000.urdf"), basePosition=[0.34,-0.34,0.01])
 
-state_durations = [1,1,1,1]
-control_dt = 1./240.
-p.setTimestep = control_dt
-state_t = 0.
-current_state = 0
 
 while True:
     p.stepSimulation()
