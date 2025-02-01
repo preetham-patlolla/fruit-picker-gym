@@ -1,0 +1,198 @@
+import gym
+from gym import spaces
+
+import os
+import pybullet as p
+import pybullet_data
+import math
+import numpy as np
+import random
+
+from typing import Any
+
+
+class FruitPickerEnv(gym.Env):
+    metadata = {'render.modes': ['human']}
+
+    def __init__(self):
+        # Connect to the UI for visualization
+        p.connect(p.GUI)
+
+        # Reset the 3D OpenGL debug visualizer camera distance (between eye and camera
+        # target position), camera yaw and pitch and camera target position
+        p.resetDebugVisualizerCamera(cameraDistance=4, cameraYaw=-60, cameraPitch=-40,
+                                     cameraTargetPosition=[0.55,-0.35,0.2])
+
+        # Define the action space
+        self.action_space = spaces.Box(np.array([-1] * 4), np.array([1] * 4))
+
+        # Define the observation space
+        self.observation_space = spaces.Box(np.array([-1] * 5), np.array([1] * 5))
+
+    @staticmethod
+    def reward_func(state_object1: Any, trayUid: Any, penalty_factor: int = 2) -> (int, bool):
+
+        positive_reward: int = 1
+        negative_reward: int = -(positive_reward * penalty_factor)
+
+        ((min_x, min_y, min_z), (max_x, max_y, max_z)) = p.getAABB(trayUid)
+        if ((min_x < state_object1[0] < max_x) and (min_y < state_object1[1] < max_y)
+                and (min_z < state_object1[2] < max_z)):
+            reward = positive_reward
+            done = True
+        else:
+            reward = negative_reward
+            done = False
+
+        return reward, done
+
+    def step(self, action) -> Any:
+
+        # Configure the built-in OpenGL visualizer for better rendering
+        p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
+
+        # Convert the orientation from Euler to Quaternion
+        orientation = p.getQuaternionFromEuler([0., -math.pi, math.pi / 2.])
+
+        # Factor for smoother inverse kinematics output
+        dv = 0.005
+        dx = action[0] * dv
+        dy = action[1] * dv
+        dz = action[2] * dv
+        fingers = action[3]
+
+        # Get the current pose of the end-effector
+        # As per the URDF file of the Franka Emika Panda robot, the end-effector link index 11
+        currentPose = p.getLinkState(self.pandaUid, 11)
+
+        # Extract the position ignoring the orientation from the pose obtained above
+        currentPosition = currentPose[0]
+
+        # Compute new positions as per the changes in the corresponding dimensions
+        newPosition = [currentPosition[0] + dx,
+                       currentPosition[1] + dy,
+                       currentPosition[2] + dz]
+
+        # Get the joint pose via inverse kinematics based on the new position and current orientation
+        jointPoses = p.calculateInverseKinematics(self.pandaUid, 11, newPosition, orientation)
+
+        # Simulate the motors to reach the given target value
+        p.setJointMotorControlArray(self.pandaUid, list(range(7)) + [9, 10], p.POSITION_CONTROL,
+                                    list(jointPoses) + 2 * [fingers])
+
+        # Perform one step of the simulation
+        p.stepSimulation()
+
+        # Get the states of the all the objects after performing one simulation step
+        state_object1, _ = p.getBasePositionAndOrientation(self.objectUid1)
+        state_object2, _ = p.getBasePositionAndOrientation(self.objectUid2)
+        state_object3, _ = p.getBasePositionAndOrientation(self.objectUid3)
+        state_object4, _ = p.getBasePositionAndOrientation(self.objectUid4)
+        state_object5, _ = p.getBasePositionAndOrientation(self.objectUid5)
+        state_object6, _ = p.getBasePositionAndOrientation(self.objectUid6)
+
+        # Get the robot state after performing one simulation step
+        state_robot = p.getLinkState(self.pandaUid, 11)[0]
+
+        # Get the state of the robot's fingers
+        state_fingers = (p.getJointState(self.pandaUid, 9)[0], p.getJointState(self.pandaUid, 10)[0])
+
+        # Define and update the reward
+
+        # For Strawberries
+        reward1, done1 = self.reward_func(state_object1, self.trayUidStrawberries, penalty_factor=3)
+        reward2, done2 = self.reward_func(state_object2, self.trayUidStrawberries, penalty_factor=3)
+        reward3, done3 = self.reward_func(state_object3, self.trayUidStrawberries, penalty_factor=3)
+
+        # For Bananas
+        reward4, done4 = self.reward_func(state_object4, self.trayUidBananas, penalty_factor=3)
+        reward5, done5 = self.reward_func(state_object5, self.trayUidBananas, penalty_factor=3)
+        reward6, done6 = self.reward_func(state_object6, self.trayUidBananas, penalty_factor=3)
+
+        # Compute final reward and final done status
+        final_reward = reward1 + reward2 + reward3 + reward4 + reward5 + reward6
+        done = (done1 and done2 and done3 and done4 and done5 and done6)
+
+        # Diagnostic information
+        info = (state_object1, state_object2, state_object3, state_object4, state_object5, state_object6)
+        observation = state_robot + state_fingers
+
+        return observation, final_reward, done, info
+
+    def reset(self, seed=None, options=None) -> Any:
+        p.resetSimulation()
+
+        # Disable rendering while loading all the parameters
+        p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)
+
+        # Set gravity for the environment
+        p.setGravity(0, 0, -9.8)
+
+        # Get the root path for the URDF files
+        urdfRootPath = pybullet_data.getDataPath()
+
+        planeUid = p.loadURDF(os.path.join(urdfRootPath, "plane.urdf"), basePosition=[0, 0, -0.65])
+
+        # Rest poses for the robot
+        rest_poses = [0, -0.215, 0, -2.57, 0, 2.356, 2.356, 0.08, 0.08]
+        # Add the Franka Panda Robot
+        self.pandaUid = p.loadURDF(os.path.join(urdfRootPath, "franka_panda/panda.urdf"), useFixedBase=True)
+
+        for i in range(7):
+            # Reset joints to the rest poses
+            p.resetJointState(self.pandaUid, i, rest_poses[i])
+
+        # Add the table and put the robot on the table
+        tableUidSource = p.loadURDF(os.path.join(urdfRootPath, "table/table.urdf"),
+                                    basePosition=[0.0, -0.4, -0.65], globalScaling=1.0)
+
+        # Add the tray on top of the table
+        self.trayUidMix = p.loadURDF(os.path.join(urdfRootPath, "tray/traybox.urdf"),
+                                     basePosition=[-0.05, -0.6, 0], globalScaling=1.2)
+
+        # Table 2
+        tableUidDestination = p.loadURDF(os.path.join(urdfRootPath, "table/table.urdf"),
+                                         basePosition=[0.0, 0.6, -0.65], globalScaling=1.0)
+
+        # Tray for bananas
+        self.trayUidBananas = p.loadURDF(os.path.join(urdfRootPath, "tray/traybox.urdf"),
+                                         basePosition=[-0.4, 0.45, 0], globalScaling=1.2)
+
+        # Tray for strawberries
+        self.trayUidStrawberries = p.loadURDF(os.path.join(urdfRootPath, "tray/traybox.urdf"),
+                                              basePosition=[0.4, 0.45, 0], globalScaling=1.2)
+
+        # Randomly place the objects within the boundaries of the mix tray leveraging the following random generator
+        state_object = [random.uniform(-0.2, 0.15), random.uniform(-0.85, -0.5), 0.001]
+        self.objectUid1 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbStrawberry/strawberry.urdf",
+                                     basePosition=state_object, globalScaling=2.0)
+        self.objectUid2 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbStrawberry/strawberry.urdf",
+                                     basePosition=state_object, globalScaling=2.0)
+        self.objectUid3 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbStrawberry/strawberry.urdf",
+                                     basePosition=state_object, globalScaling=2.0)
+        self.objectUid4 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbBanana/banana.urdf",
+                                     basePosition=state_object)
+        self.objectUid5 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbBanana/banana.urdf",
+                                     basePosition=state_object)
+        self.objectUid6 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbBanana/banana.urdf",
+                                     basePosition=state_object)
+
+        # Get the state of the end-effector and extract only the pose (ignore orientation)
+        state_robot = p.getLinkState(self.pandaUid, 11)[0]
+
+        # Get the state of the fingers
+        state_fingers = (p.getJointState(self.pandaUid, 9)[0], p.getJointState(self.pandaUid, 10)[0])
+
+        # Observation space = end-effector state + fingers state
+        observation = state_robot + state_fingers
+
+        # Turning visualizer on after loading all the parameters
+        p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
+        return observation
+
+    def render(self, mode="human"):
+        pass
+
+    def close(self):
+        pass
+
