@@ -164,17 +164,19 @@ class FruitPickerEnv(gym.Env):
 
         # Randomly place the objects within the boundaries of the mix tray leveraging the following random generator
         state_object = [random.uniform(-0.2, 0.15), random.uniform(-0.85, -0.5), 0.001]
-        self.objectUid1 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbStrawberry/strawberry.urdf",
+
+        current_path = os.path.abspath(os.path.dirname(__file__))
+        self.objectUid1 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbStrawberry/strawberry.urdf"),
                                      basePosition=state_object, globalScaling=2.0)
-        self.objectUid2 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbStrawberry/strawberry.urdf",
+        self.objectUid2 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbStrawberry/strawberry.urdf"),
                                      basePosition=state_object, globalScaling=2.0)
-        self.objectUid3 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbStrawberry/strawberry.urdf",
+        self.objectUid3 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbStrawberry/strawberry.urdf"),
                                      basePosition=state_object, globalScaling=2.0)
-        self.objectUid4 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbBanana/banana.urdf",
+        self.objectUid4 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbBanana/banana.urdf"),
                                      basePosition=state_object)
-        self.objectUid5 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbBanana/banana.urdf",
+        self.objectUid5 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbBanana/banana.urdf"),
                                      basePosition=state_object)
-        self.objectUid6 = p.loadURDF(r"fruit_picker_gym/envs/additional_objects/YcbBanana/banana.urdf",
+        self.objectUid6 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbBanana/banana.urdf"),
                                      basePosition=state_object)
 
         # Get the state of the end-effector and extract only the pose (ignore orientation)
@@ -219,4 +221,3 @@ class FruitPickerEnv(gym.Env):
 
     def close(self):
         p.disconnect()
-
