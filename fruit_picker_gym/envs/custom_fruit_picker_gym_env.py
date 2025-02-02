@@ -46,7 +46,7 @@ class FruitPickerEnv(gym.Env):
 
         return reward, done
 
-    def step(self, action) -> Any:
+    def step(self, action: Any) -> Any:
 
         # Configure the built-in OpenGL visualizer for better rendering
         p.configureDebugVisualizer(p.COV_ENABLE_SINGLE_STEP_RENDERING)
@@ -119,7 +119,7 @@ class FruitPickerEnv(gym.Env):
 
         return observation, final_reward, done, info
 
-    def reset(self, seed=None, options=None) -> Any:
+    def reset(self, seed: Any = None, options: Any = None) -> Any:
         p.resetSimulation()
 
         # Disable rendering while loading all the parameters
@@ -190,9 +190,33 @@ class FruitPickerEnv(gym.Env):
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
         return observation
 
-    def render(self, mode="human"):
-        pass
+    def render(self, mode: str = "human") -> Any:
+        # Place the camera ta a desired position and orientation in the environment
+        view_matrix = p.computeViewMatrixFromYawPitchRoll(cameraTargetPosition=[0.25,0.1,0.2],
+                                                          distance=1.75,
+                                                          yaw=0,
+                                                          pitch=-85,
+                                                          roll=0,
+                                                          upAxisIndex=2)
+
+        proj_matrix = p.computeProjectionMatrixFOV(fov=60,
+                                                   aspect=float(960) / 720,
+                                                   nearVal=0.1,
+                                                   farVal=100.0)
+
+        # Get the image from the camera with specified dimensions
+        (_, _, px, _, _) = p.getCameraImage(width=960,
+                                            height=720,
+                                            viewMatrix=view_matrix,
+                                            projectionMatrix=proj_matrix,
+                                            renderer=p.ER_BULLET_HARDWARE_OPENGL)
+
+        rgb_array = np.array(px, dtype=np.uint8)
+        rgb_array = np.reshape(rgb_array, (720, 960, 4))
+
+        rgb_array = rgb_array[:, :, :3]
+        return rgb_array
 
     def close(self):
-        pass
+        p.disconnect()
 
