@@ -182,7 +182,7 @@ class FruitPickerEnv(gym.Env):
 
         return observation, final_reward, done, info
 
-    def reset(self, seed: Any = None, options: Any = None) -> Any:
+    def reset(self, seed: Any = None, options: Any = None) -> tuple:
         """
         This method resets all the parameters and spaces before the start of the simulation
         :param seed: <Any> Used to reproduce the results
@@ -249,7 +249,6 @@ class FruitPickerEnv(gym.Env):
                                      basePosition=state_object_base)
         self.objectUid6 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbBanana/banana.urdf"),
                                      basePosition=state_object_base)
-        self.objectUid = p.loadURDF(os.path.join(urdfRootPath, "random_urdfs/000/000.urdf"), basePosition=state_object_base)
 
         # Get the state of the end-effector and extract only the pose (ignore orientation)
         state_robot = p.getLinkState(self.pandaUid, 11)
@@ -264,7 +263,7 @@ class FruitPickerEnv(gym.Env):
         p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1)
 
         logger.debug(f"Finished resetting the environment")
-        return observation
+        return observation, {}
 
     def render(self, mode: str = "human") -> Any:
         """
