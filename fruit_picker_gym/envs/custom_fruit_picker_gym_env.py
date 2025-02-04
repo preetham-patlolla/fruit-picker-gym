@@ -9,6 +9,7 @@ import numpy as np
 import random
 
 from typing import Any
+from typing import Optional
 
 import logging
 
@@ -182,7 +183,7 @@ class FruitPickerEnv(gymnasium.Env):
 
         return observation, final_reward, done, info
 
-    def reset(self, seed: Any = None, options: Any = None) -> tuple:
+    def reset(self, seed = None, options = None) -> tuple:
         """
         This method resets all the parameters and spaces before the start of the simulation
         :param seed: <Any> Used to reproduce the results
@@ -265,7 +266,7 @@ class FruitPickerEnv(gymnasium.Env):
         logger.debug(f"Finished resetting the environment")
         return observation, {}
 
-    def render(self, mode: str = "human") -> Any:
+    def render(self) -> Any:
         """
         This method renders the simulation frame by frame as an image
         :param mode: <str> Used to control the rendering mode
