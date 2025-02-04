@@ -1,5 +1,5 @@
-import gym
-from gym import spaces
+import gymnasium
+from gymnasium import spaces
 
 import os
 import pybullet as p
@@ -23,7 +23,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
 
-class FruitPickerEnv(gym.Env):
+class FruitPickerEnv(gymnasium.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self):
