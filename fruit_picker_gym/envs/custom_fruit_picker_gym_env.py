@@ -181,7 +181,7 @@ class FruitPickerEnv(gymnasium.Env):
         logger.debug(f"Final reward: {final_reward}")
         logger.debug(f"Done status: {done}")
 
-        return observation, final_reward, done, info
+        return observation, final_reward, done, False, info
 
     def reset(self, seed = None, options = None) -> tuple:
         """
