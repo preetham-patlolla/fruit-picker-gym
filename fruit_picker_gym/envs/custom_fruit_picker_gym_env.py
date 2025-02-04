@@ -1,5 +1,5 @@
 import gymnasium
-from gymnasium import spaces
+from gym import spaces
 
 import os
 import pybullet as p
