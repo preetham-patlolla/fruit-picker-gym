@@ -8,5 +8,5 @@ setuptools.setup(
     long_description=Path("README.md").read_text(),
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(include="fruit_picker_gym*"),
-    install_requires=['gym']  # And any other dependencies foo needs
+    install_requires=['gymnasium']  # And any other dependencies foo needs
 )
