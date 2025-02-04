@@ -274,10 +274,10 @@ class FruitPickerEnv(gym.Env):
 
         logger.debug(f"Started rendering the image")
         # Place the camera ta a desired position and orientation in the environment
-        view_matrix = p.computeViewMatrixFromYawPitchRoll(cameraTargetPosition=[0.25,0.1,0.2],
-                                                          distance=1.75,
-                                                          yaw=0,
-                                                          pitch=0,
+        view_matrix = p.computeViewMatrixFromYawPitchRoll(cameraTargetPosition=[0,-0.4,0.2],
+                                                          distance=1.5,
+                                                          yaw=-60,
+                                                          pitch=-70,
                                                           roll=0,
                                                           upAxisIndex=2)
 
