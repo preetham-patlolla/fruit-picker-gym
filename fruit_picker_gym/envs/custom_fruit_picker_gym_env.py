@@ -13,6 +13,8 @@ from typing import Optional
 
 import logging
 
+from fruit_picker_gym.collision import CollisionDetector
+
 logging.basicConfig(filename="fruit_picker_env_logs.log",
                     format='%(asctime)s %(message)s',
                     filemode='w')
@@ -37,38 +39,89 @@ class FruitPickerEnv(gymnasium.Env):
                                      cameraTargetPosition=[0.55,-0.35,0.2])
 
         # Define the action space
-        self.action_space = spaces.Box(np.array([-1] * 8), np.array([1] * 8))
+        self.action_space = spaces.Box(np.array([-1] * 4), np.array([1] * 4))
         logger.debug(f"Initial action space: {self.action_space}")
 
         # Define the observation space
-        self.observation_space = spaces.Box(np.array([-1] * 8), np.array([1] * 8))
+        self.observation_space = spaces.Box(np.array([-1] * 5), np.array([1] * 5))
         logger.debug(f"Initial action space: {self.observation_space}")
 
-    @staticmethod
-    def reward_func(state_object: Any, trayUid: Any, name: str, penalty_factor: int = 2) -> (int, bool):
+
+    def detect_grasping(self, object) -> bool:
+        finger1_contact = p.getContactPoints(bodyA=self.pandaUid, bodyB=object, linkIndexA=9)
+        finger2_contact = p.getContactPoints(bodyA=self.pandaUid, bodyB=object, linkIndexA=10)
+
+        if finger1_contact and finger2_contact:
+            if finger1_contact[0][0] and finger2_contact[0][0]:
+                return True
+            else:
+                return False
+        else:
+            return False
+
+    def detect_positive_approach(self, objectUid, threshold) -> (bool, float):
+        distance = p.getClosestPoints(bodyA=self.pandaUid, bodyB=objectUid, distance=2.0, linkIndexA=9)
+        if distance:
+            if distance[0][8] < threshold:
+                return True, distance[0][8]
+            else:
+                return False, threshold
+        else:
+            return False, threshold
+
+    def detect_collisions(self) -> bool:
+        return self.collision_detector.in_collision()
+
+
+
+    def reward_func(self, objectUid: Any, state_object: Any, trayUid: Any,
+                    state_fingers: Any, name: str) -> (float, bool):
         """
         This is a static method within the environment class to define and curate the reward function.
+        :param state_fingers: <Any> State of the robot fingers
+        :param name: <str> Name of the fruit/object
         :param state_object: <Any> Current state of an object.
-        :param trayUid: <Any> PyBullet Id for the tray in which the object is supposed to be put.
-        :param penalty_factor: <Any> Factor by which the -ve reward is amplified compared to the +ve reward.
-        :return: <tuple> Returns a tuple containing the reward as int and a bool status (done/not_done).
+        :param trayUid: <Any> PyBullet ID for the tray in which the object is supposed to be put.
+        :return: <tuple> Tuple of reward and done status
         """
+        overall_reward = 0
 
-        positive_reward: int = 1
-        negative_reward: int = -(positive_reward * penalty_factor)
+        # Positive rewards:
+        ultimate_positive_reward = 20.0
+        grasping_reward= 10.0
+        max_positive_approach_reward = 8.0
 
+        # Negative rewards:
+        collision_penalty = -10.0
+        negative_reward = -20.0
+
+        # Get the boundaries for the destination tray
         ((min_x, min_y, min_z), (max_x, max_y, max_z)) = p.getAABB(trayUid)
+
+        # If the fruit is within the boundaries of the destination tray,
+        # reward the agent with the ultimate positive reward
         if ((min_x < state_object[0] < max_x) and (min_y < state_object[1] < max_y)
                 and (min_z < state_object[2] < max_z)):
-            reward = positive_reward
+            overall_reward += ultimate_positive_reward
             done = True
+        # Reward for grasping
+        elif self.detect_grasping(objectUid):
+            overall_reward += grasping_reward
+            done = False
+        elif (self.detect_positive_approach(objectUid, threshold=0.5)[0]) and (not self.detect_collisions()):
+            distance = self.detect_positive_approach(objectUid, threshold=2.0)[1]
+            overall_reward += min((0.5/(distance*distance)), max_positive_approach_reward)
+            done = False
+        elif self.detect_collisions():
+            overall_reward += (collision_penalty + negative_reward)
+            done = False
         else:
-            reward = negative_reward
+            overall_reward += negative_reward
             done = False
 
-        logger.debug(f"Reward for {name} --> {state_object}: {reward}; Done status: {done}")
+        logger.debug(f"Reward for {name} --> {state_object}: {overall_reward}; Done status: {done}")
 
-        return reward, done
+        return overall_reward, done
 
     def step(self, action: Any) -> Any:
         """
@@ -90,12 +143,7 @@ class FruitPickerEnv(gymnasium.Env):
         dx = action[0] * dv
         dy = action[1] * dv
         dz = action[2] * dv
-        fingers_pose = action[3]
-
-        dr = 0.5
-        da = action[4] * dr
-        db = action[5] * dr
-        dc = action[6] * dr
+        fingers = action[3]
 
         # Get the current pose of the end-effector
         # As per the URDF file of the Franka Emika Panda robot, the end-effector link index 11
@@ -103,29 +151,23 @@ class FruitPickerEnv(gymnasium.Env):
 
         # Extract the position ignoring the orientation from the pose obtained above
         currentPosition = currentPose[0]
-        currentOrientation = currentPose[1]
 
         logger.debug(f"Current pose: {currentPosition}")
-        logger.debug(f"Current orientation: {currentOrientation}")
 
         # Compute new positions as per the changes in the corresponding dimensions
         newPosition = [currentPosition[0] + dx,
                        currentPosition[1] + dy,
                        currentPosition[2] + dz]
 
-        newOrientation = [currentOrientation[0] + da,
-                          currentOrientation[1] + db,
-                          currentOrientation[2] + dc]
-
         logger.debug(f"New position: {newPosition}")
 
         # Get the joint pose via inverse kinematics based on the new position and current orientation
-        jointPoses = p.calculateInverseKinematics(self.pandaUid, 11, newPosition, newOrientation)
+        jointPoses = p.calculateInverseKinematics(self.pandaUid, 11, newPosition, orientation)
         logger.debug(f"Joint poses for the above new position: {jointPoses}")
 
         # Simulate the motors to reach the given target value
-        p.setJointMotorControlArray(self.pandaUid, list(range(11)), p.POSITION_CONTROL,
-                                    list(jointPoses) + 2 * [fingers_pose])
+        p.setJointMotorControlArray(self.pandaUid, list(range(7))+[9,10], p.POSITION_CONTROL,
+                                    list(jointPoses[:7])+2*[fingers])
 
         # Perform one step of the simulation
         p.stepSimulation()
@@ -140,30 +182,30 @@ class FruitPickerEnv(gymnasium.Env):
         state_object6, _ = p.getBasePositionAndOrientation(self.objectUid6)
 
         # Get the robot state after performing one simulation step
-        state_robot = p.getLinkState(self.pandaUid, 11)
+        state_robot = p.getLinkState(self.pandaUid, 11)[0]
         logger.debug(f"Robot state: {state_robot}")
 
         # Get the state of the robot's fingers
-        state_fingers = p.getJointState(self.pandaUid, 9)[0], p.getJointState(self.pandaUid, 10)
+        state_fingers = (p.getJointState(self.pandaUid, 9)[0], p.getJointState(self.pandaUid, 10)[0])
         logger.debug(f"Fingers state: {state_fingers}")
 
         # Define and update the reward
 
         # For Strawberries
-        reward1, done1 = self.reward_func(state_object1, self.trayUidStrawberries,
-                                          penalty_factor=3, name="strawberry_1")
-        reward2, done2 = self.reward_func(state_object2, self.trayUidStrawberries,
-                                          penalty_factor=3, name="strawberry_2")
-        reward3, done3 = self.reward_func(state_object3, self.trayUidStrawberries,
-                                          penalty_factor=3, name="strawberry_3")
+        reward1, done1 = self.reward_func(self.objectUid1, state_object1, self.trayUidStrawberries,
+                                          state_fingers, name="strawberry_1")
+        reward2, done2 = self.reward_func(self.objectUid2, state_object2, self.trayUidStrawberries,
+                                          state_fingers, name="strawberry_2")
+        reward3, done3 = self.reward_func(self.objectUid3, state_object3, self.trayUidStrawberries,
+                                          state_fingers, name="strawberry_3")
 
         # For Bananas
-        reward4, done4 = self.reward_func(state_object4, self.trayUidBananas,
-                                          penalty_factor=3, name="banana_1")
-        reward5, done5 = self.reward_func(state_object5, self.trayUidBananas,
-                                          penalty_factor=3, name="banana_2")
-        reward6, done6 = self.reward_func(state_object6, self.trayUidBananas,
-                                          penalty_factor=3, name="banana_3")
+        reward4, done4 = self.reward_func(self.objectUid4, state_object4, self.trayUidBananas,
+                                      state_fingers, name="banana_1")
+        reward5, done5 = self.reward_func(self.objectUid5, state_object5, self.trayUidBananas,
+                                      state_fingers, name="banana_2")
+        reward6, done6 = self.reward_func(self.objectUid6, state_object6, self.trayUidBananas,
+                                      state_fingers, name="banana_3")
 
         # Compute final reward and final done status
         final_reward = reward1 + reward2 + reward3 + reward4 + reward5 + reward6
@@ -200,17 +242,20 @@ class FruitPickerEnv(gymnasium.Env):
         # Set gravity for the environment
         p.setGravity(0, 0, -10)
 
+        p.setTimeStep(1/60)
+
         # Get the root path for the URDF files
         urdfRootPath = pybullet_data.getDataPath()
 
         planeUid = p.loadURDF(os.path.join(urdfRootPath, "plane.urdf"), basePosition=[0, 0, -0.65])
 
         # Rest poses for the robot
-        rest_poses = [0, -0.215, 0, -2.57, 0, 2.356, 2.356, 0.08, 0.08]
+        rest_poses = [-1.57, 0.215, 0, -2.57, 0, 2.356, 2.356, 0.08, 0.08]
         # Add the Franka Panda Robot
-        self.pandaUid = p.loadURDF(os.path.join(urdfRootPath, "franka_panda/panda.urdf"), useFixedBase=True)
 
-        for i in range(9):
+        self.pandaUid = p.loadURDF(os.path.join(urdfRootPath, "franka_panda/panda.urdf"), useFixedBase=True, flags=p.URDF_USE_SELF_COLLISION)
+
+        for i in range(7):
             # Reset joints to the rest poses
             p.resetJointState(self.pandaUid, i, rest_poses[i])
 
@@ -239,23 +284,52 @@ class FruitPickerEnv(gymnasium.Env):
 
         current_path = os.path.abspath(os.path.dirname(__file__))
         self.objectUid1 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbStrawberry/strawberry.urdf"),
-                                     basePosition=state_object_base, globalScaling=2.0)
+                                     basePosition=[-0.1,-0.6,0.01])
         self.objectUid2 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbStrawberry/strawberry.urdf"),
-                                     basePosition=state_object_base, globalScaling=2.0)
+                                     basePosition=[-0.13,-0.7,0.01])
         self.objectUid3 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbStrawberry/strawberry.urdf"),
-                                     basePosition=state_object_base, globalScaling=2.0)
-        self.objectUid4 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbBanana/banana.urdf"),
-                                     basePosition=state_object_base)
-        self.objectUid5 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbBanana/banana.urdf"),
-                                     basePosition=state_object_base)
-        self.objectUid6 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbBanana/banana.urdf"),
-                                     basePosition=state_object_base)
+                                     basePosition=[0.1, -0.8, 0.01])
+        self.objectUid4 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbPear/pear.urdf"),
+                                     basePosition=[-0.16,-0.66,0.01])
+        self.objectUid5 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbPear/pear.urdf"),
+                                     basePosition=[-0.07,-0.57,0.01])
+        self.objectUid6 = p.loadURDF(os.path.join(current_path, "../../additional_objects/YcbPear/pear.urdf"),
+                                     basePosition=[-0.04,-0.54,0.01])
+
+        # Initialize collision detector:
+        self.collision_detector = CollisionDetector(0,
+                                                    [(self.pandaUid, 0), (self.pandaUid, 1),
+                                                     (self.pandaUid, 2), (self.pandaUid, 3),(self.pandaUid, 4),
+                                                     (self.pandaUid, 5), (self.pandaUid, 6),(self.pandaUid, 7),
+                                                     (self.pandaUid, 8), (self.pandaUid, 9), (self.pandaUid, 10),
+                                                     (self.pandaUid, self.trayUidMix), (self.pandaUid, self.trayUidBananas),
+                                                     (self.pandaUid, self.trayUidStrawberries)])
+
+        # self.objectUid1 = p.loadURDF(os.path.join(urdfRootPath, "cube.urdf"),
+        #                              basePosition=state_object_base, globalScaling=0.2)
+        # self.objectUid2 = p.loadURDF(os.path.join(urdfRootPath, "cube.urdf"),
+        #                              basePosition=state_object_base, globalScaling=0.2)
+        # self.objectUid3 = p.loadURDF(os.path.join(urdfRootPath, "cube.urdf"),
+        #                              basePosition=state_object_base, globalScaling=0.2)
+        # self.objectUid4 = p.loadURDF(os.path.join(urdfRootPath, "sphere2.urdf"),
+        #                              basePosition=state_object_base, globalScaling=0.2)
+        # self.objectUid5 = p.loadURDF(os.path.join(urdfRootPath, "sphere2.urdf"),
+        #                              basePosition=state_object_base, globalScaling=0.2)
+        # self.objectUid6 = p.loadURDF(os.path.join(urdfRootPath, "sphere2.urdf"),
+        #                              basePosition=state_object_base, globalScaling=0.2)
+
+        p.resetBaseVelocity(self.objectUid1, [0,0,0], [0,0,0])
+        p.resetBaseVelocity(self.objectUid2, [0,0,0], [0,0,0])
+        p.resetBaseVelocity(self.objectUid3, [0,0,0], [0,0,0])
+        p.resetBaseVelocity(self.objectUid4, [0,0,0], [0,0,0])
+        p.resetBaseVelocity(self.objectUid5, [0,0,0], [0,0,0])
+        p.resetBaseVelocity(self.objectUid6, [0,0,0], [0,0,0])
 
         # Get the state of the end-effector and extract only the pose (ignore orientation)
-        state_robot = p.getLinkState(self.pandaUid, 11)
+        state_robot = p.getLinkState(self.pandaUid, 11)[0]
 
         # Get the state of the fingers
-        state_fingers = p.getJointState(self.pandaUid, 9)[0], p.getJointState(self.pandaUid, 10)
+        state_fingers = p.getJointState(self.pandaUid, 9)[0], p.getJointState(self.pandaUid, 10)[0]
 
         # Observation space = end-effector state + fingers state
         observation = state_robot + state_fingers
