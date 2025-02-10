@@ -1,0 +1,14 @@
+{
+  "model_parameters": {
+    "policy": "CnnPolicy",
+    "total_time_steps": 2000000,
+    "max_episode_steps": 2048,
+    "batch_size": 128,
+    "model_name": "fruit_picker_ppo"
+  },
+  "pre_processing_config": {
+    "apply_reward_normalization": true,
+    "apply_observation_normalization": false,
+    "use_image_observation": true
+  }
+}

@@ -3,3 +3,4 @@ numpy~=1.26.4
 stable-baselines3~=2.5.0
 setuptools~=75.1.0
 gymnasium~=1.0.0
+pydantic~=2.10.6
