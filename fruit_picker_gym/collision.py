@@ -152,5 +152,5 @@ class CollisionDetector:
         :
             True if configuration q is in collision, False otherwise.
         """
-        ds = self.compute_distances(max_distance=margin + 0.1)
+        ds = self.compute_distances(max_distance=margin + 0.01)
         return (ds < margin).any()
